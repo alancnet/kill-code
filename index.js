@@ -73,23 +73,27 @@ async function main () {
   .filter(fork => argv.kill || argv.all || (fork.commands.length && !fork.self))
   .sort((a, b) => a.self ? 1 : b.self ? -1 : a.id - b.id)
   if (!argv['no-tty'] && !argv.kill) {
-    term.cyan.bold('Select a vscode-server fork to terminate:\n')
-    const response = await term.singleColumnMenu(forks, {exitOnUnexpectedKey: true}).promise
-    if (response.submitted) {
-      const fork = forks[response.selectedIndex]
-      if (response.selectedText.includes(cmd)) {
-        term.red.bold('Uh, it looks like that is this fork. Are you sure you want to kill me? ([Y]es / [N]o)\n')
-      } else {
-        term.yellow.bold('This will kill all these processes:\n')
-        console.log(fork.commands.map(c => c.padStart(4)).join('\n'))
-        term.yellow.bold('Are you sure you want to proceed? ([Y]es / [N]o)\n')
+    if (forks.length) {
+      term.cyan.bold('Select a vscode-server fork to terminate:\n')
+      const response = await term.singleColumnMenu(forks, {exitOnUnexpectedKey: true}).promise
+      if (response.submitted) {
+        const fork = forks[response.selectedIndex]
+        if (response.selectedText.includes(cmd)) {
+          term.red.bold('Uh, it looks like that is this fork. Are you sure you want to kill me? ([Y]es / [N]o)\n')
+        } else {
+          term.yellow.bold('This will kill all these processes:\n')
+          console.log(fork.commands.map(c => c.padStart(4)).join('\n'))
+          term.yellow.bold('Are you sure you want to proceed? ([Y]es / [N]o)\n')
+        }
+        const confirmed = await term.yesOrNo().promise
+        term('\n')
+        if (confirmed) {
+          await killFork(fork, {debug: argv.debug})
+          term('Done\n')
+        }
       }
-      const confirmed = await term.yesOrNo().promise
-      term('\n')
-      if (confirmed) {
-        await killFork(fork, {debug: argv.debug})
-        term('Done\n')
-      }
+    } else {
+      console.info('Nothing to do.')
     }
   } else {
     if (argv.kill) {
