@@ -1,7 +1,7 @@
 {
   "name": "kill-code",
-  "description": "Command line utility for terminating disconnected vscode instances.",
-  "version": "1.0.1",
+  "description": "Command line utility for terminating disconnected vscode instances and node processes.",
+  "version": "1.0.2",
   "main": "index.js",
   "repository": {
     "type": "git",

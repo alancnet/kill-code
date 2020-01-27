@@ -4,6 +4,7 @@ const killWithStyle = require('kill-with-style')
 const term = termkit.terminal
 
 const { getProcessTree, cmd } = require('./process-tree')
+const { getListeners } = require('./listeners')
 const { inspect } = require('util')
 
 const PATH = process.env.PATH.split(':').flatMap(p => [
@@ -60,35 +61,61 @@ async function main () {
     })
     .argv
 
-    const tree = await getProcessTree()
+  const [tree, listeners] = await Promise.all([getProcessTree(), getListeners()])
+
   const forkRegex = /\.vscode-server\/bin\/.*\/node .*bootstrap-fork/
   const forks = tree.filter(x => forkRegex.test(x.command)).map(fork => {
     fork.commands = []
     walk(fork, fork)
     fork.summary = `${fork.id}: (${fork.user}) ${fork.commands.join('; ')}`
     fork.commandSummary = fork.commands.join('; ')
-    fork.toString = () => fork.summary
+    fork.listener = listeners[fork.id]
+    fork.toString = () => `${fork.listener ? `${fork.listener.protocol} ${fork.listener.address}` : ''} ${fork.summary}`
     return fork
   })
   .filter(fork => argv.kill || argv.all || (fork.commands.length && !fork.self))
   .sort((a, b) => a.self ? 1 : b.self ? -1 : a.id - b.id)
+
+
+  const walkNode = process => {
+    if (!process) return []
+    if (process.command.includes('node')) return [process, ...walkNode(process.parent)]
+    return walkNode(process.parent)
+  }
+  const nodes = Object.values(listeners).filter(x => x.process.includes('node')).map(node => {
+    node.process = tree.find(x => x.id == node.pid)
+    node.nodes = walkNode(node.process)
+    node.toString = () => `${node.protocol} ${node.address} ${node.process.command}`
+    return node
+  })
+
+
+
   if (!argv['no-tty'] && !argv.kill) {
-    if (forks.length) {
-      term.cyan.bold('Select a vscode-server fork to terminate:\n')
-      const response = await term.singleColumnMenu(forks, {exitOnUnexpectedKey: true}).promise
+    const options = [...nodes, ...forks]
+    if (options.length) {
+      term.cyan.bold('Select a process to terminate:\n')
+      const response = await term.singleColumnMenu(options, {exitOnUnexpectedKey: true}).promise
       if (response.submitted) {
-        const fork = forks[response.selectedIndex]
+        const option = options[response.selectedIndex]
         if (response.selectedText.includes(cmd)) {
           term.red.bold('Uh, it looks like that is this fork. Are you sure you want to kill me? ([Y]es / [N]o)\n')
         } else {
-          term.yellow.bold('This will kill all these processes:\n')
-          console.log(fork.commands.map(c => c.padStart(4)).join('\n'))
-          term.yellow.bold('Are you sure you want to proceed? ([Y]es / [N]o)\n')
+          if (option.commands) {
+            term.yellow.bold('This will kill all these processes:\n')
+            console.log(option.commands.map(c => c.padStart(4)).join('\n'))
+            term.yellow.bold('Are you sure you want to proceed? ([Y]es / [N]o)\n')
+          } else {
+            term.yellow.bold('This will kill all these processes:\n')
+            console.log(option.nodes.map(c => c.command.padStart(4)).join('\n'))
+            term.yellow.bold('Are you sure you want to proceed? ([Y]es / [N]o)\n')
+          }
         }
         const confirmed = await term.yesOrNo().promise
         term('\n')
         if (confirmed) {
-          await killFork(fork, {debug: argv.debug})
+          if (option.commands) await killFork(option, {debug: argv.debug})
+          else await killNode(option, {debug: argv.debug})
           term('Done\n')
         }
       }
@@ -133,7 +160,10 @@ async function killFork(fork, opts) {
       ...opts
     }, (err, val) => err ? reject(err) : resolve(val))
   })
+}
 
+async function killNode(node, opts) {
+  await killFork(node.nodes[node.nodes.length - 1])
 }
 
 module.exports = { main }
