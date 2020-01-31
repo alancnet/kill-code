@@ -63,6 +63,15 @@ async function main () {
 
   const [tree, listeners] = await Promise.all([getProcessTree(), getListeners()])
 
+  // Find my own process ancestry
+  const self = tree.find(x => x.id === process.pid)
+  let p = self
+  const ownPids = new Set()
+  while (p) {
+    ownPids.add(p.id)
+    p = p.parent
+  }
+
   const forkRegex = /\.vscode-server\/bin\/.*\/node .*bootstrap-fork/
   const forks = tree.filter(x => forkRegex.test(x.command)).map(fork => {
     fork.commands = []
@@ -84,12 +93,10 @@ async function main () {
   }
   const nodes = Object.values(listeners).filter(x => x.process.includes('node')).map(node => {
     node.process = tree.find(x => x.id == node.pid)
-    node.nodes = walkNode(node.process)
+    node.nodes = walkNode(node.process).filter(x => !ownPids.has(x.id))
     node.toString = () => `${node.protocol} ${node.address} ${node.process.command}`
     return node
   })
-
-
 
   if (!argv['no-tty'] && !argv.kill) {
     const options = [...nodes, ...forks]
