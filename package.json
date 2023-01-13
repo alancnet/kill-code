@@ -13,7 +13,7 @@
   "license": "MIT",
   "dependencies": {
     "kill-with-style": "^1.1.0",
-    "terminal-kit": "^1.31.7",
+    "terminal-kit": "^2.1.8",
     "yargs": "^15.0.2"
   }
 }
